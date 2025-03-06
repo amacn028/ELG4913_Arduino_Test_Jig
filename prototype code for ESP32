@@ -1,0 +1,204 @@
+import machine
+import utime,time
+import ustruct
+import sys
+import logging
+from machine import SPI, Pin,Signal,I2C
+from logging import INFO
+from ina219 import INA219
+import math
+
+edge_count =0
+measurement_time =1
+voltage_flag = True
+
+SHUNT_OHMS = 0.1
+
+i2c = I2C(-1, scl =Pin(22), sda =Pin(21))
+ina = INA219(SHUNT_OHMS, i2c, log_level=INFO)
+ina.configure()
+
+
+
+
+
+
+
+hspi = SPI(1,8000000)
+
+
+sck =Pin(14)
+mosi=Pin(13)
+miso=Pin(12)
+hspi.init(1)
+
+Power_S3=Pin(33,Pin.OUT,value=0)
+Power_S2=Pin(25,Pin.OUT,value=0)
+Power_S1=Pin(26,Pin.OUT,value=0)
+Power_S0=Pin(27,Pin.OUT,value=0)
+
+#Power_selector=[Power_S3.value(),Power_S2.value(),Power_S1.value(),Power_S0.value()]
+Power_selector=[Power_S3,Power_S2,Power_S1,Power_S0]
+#print(Power_selector)
+
+Data_S3=Pin(5,Pin.OUT,value=0)
+Data_S2=Pin(17,Pin.OUT,value=0)
+Data_S1=Pin(16,Pin.OUT,value=0)
+Data_S0=Pin(4,Pin.OUT,value=0)
+Data_selector=[Data_S3,Data_S2,Data_S1,Data_S0]
+
+Data_signal = Pin(18,Pin.IN,Pin.PULL_DOWN)
+
+#print(Data_selector)
+
+def channel(array,n):
+    if(n==0):
+        array=[array[0].value(0),array[1].value(0),array[2].value(0),array[3].value(0)]
+    elif(n==1):
+        array=[array[0].value(0),array[1].value(0),array[2].value(0),array[3].value(1)]
+    elif(n==2):
+        array=[array[0].value(0),array[1].value(0),array[2].value(1),array[3].value(0)]
+    elif(n==3):
+        array=[array[0].value(0),array[1].value(0),array[2].value(1),array[3].value(1)]
+    elif(n==4):
+        array=[array[0].value(0),array[1].value(1),array[2].value(0),array[3].value(0)]
+    elif(n==5):
+        array=[array[0].value(0),array[1].value(1),array[2].value(0),array[3].value(1)]
+    elif(n==6):
+        array=[array[0].value(0),array[1].value(1),array[2].value(1),array[3].value(0)]
+    elif(n==7):
+        array=[array[0].value(0),array[1].value(1),array[2].value(1),array[3].value(1)]
+    elif(n==8):
+        array=[array[0].value(1),array[1].value(0),array[2].value(0),array[3].value(0)]
+    elif(n==9):
+        array=[array[0].value(1),array[1].value(0),array[2].value(0),array[3].value(1)]
+    elif(n==10):
+        array=[array[0].value(1),array[1].value(0),array[2].value(1),array[3].value(0)]
+    elif(n==11):
+        array=[array[0].value(1),array[1].value(0),array[2].value(1),array[3].value(1)]
+    elif(n==12):
+        array=[array[0].value(1),array[1].value(1),array[2].value(0),array[3].value(0)]
+    elif(n==13):
+        array=[array[0].value(1),array[1].value(1),array[2].value(0),array[3].value(1)]
+    elif(n==14):
+        array=[array[0].value(1),array[1].value(1),array[2].value(1),array[3].value(0)]
+    elif(n==15):
+        array=[array[0].value(1),array[1].value(1),array[2].value(1),array[3].value(1)]
+    else:
+        print("\ninvalid channel option")    
+    return array
+
+def edge_interrupt(pin):
+    global edge_count
+    edge_count +=1
+    print("edge count:", edge_count)
+
+
+
+channel(Power_selector,0)    
+channel(Data_selector,8)
+
+BUFFER=bytearray(8)
+Measured_data =bytearray()
+handshake_output= Pin(32,Pin.OUT,value=1) # 1: puts HSPI bus in standby ; 0: turns on data transfer for HSPI bus
+#global ESP32_to_Arduino_transaction_flag
+ESP32_to_Arduino_transaction_flag=handshake_output.value()
+cs = Pin(15,Pin.IN,Pin.PULL_DOWN)      # Create chip-select on pin 15.
+#handshake=Signal(cs,invert=False)	   #may not actually need this
+handshake_input= Pin(35,Pin.IN)  
+Arduino_to_ESP32_transaction_flag= handshake_input.value()
+
+def state_capture(pin):
+    global Arduino_to_ESP32_transaction_flag
+    Arduino_to_ESP32_transaction_flag=pin.value()
+handshake_input.irq(trigger =Pin.IRQ_RISING |Pin.IRQ_FALLING, handler=state_capture)
+handshake_output.value(0)
+while True:
+#     print("test: ")
+#     print("Arduino_to_ESP32_transaction_flag: ")
+#     print(Arduino_to_ESP32_transaction_flag)
+#     print("ESP32_to_Arduino_transaction_flag: ")
+#     print(handshake_output.value())
+    if cs.value() == 0:
+        if (Arduino_to_ESP32_transaction_flag ==1 and handshake_output.value() ==0) :
+            hspi.readinto(BUFFER)
+            Measured_data +=BUFFER
+            print("Measured_data: ",Measured_data)
+            print(cs.value())
+            #print(Power_S3.value(),Power_S2.value(),Power_S1.value(),Power_S0.value())
+            print("Bus Voltage: %.3f V" % ina.voltage())
+            print("Current: %.3f mA" % ina.current())
+            print("Power: %.3f mW" % ina.power())
+            print("Data_signal: ")
+            print(Data_signal.value())
+            print("Arduino_to_ESP32_transaction_flag: ")
+            print(Arduino_to_ESP32_transaction_flag)
+            
+            #handshake_output.value(1) #use break statement instead?
+            print("ESP32_to_Arduino_transaction_flag: ")
+            print(handshake_output.value())
+            break
+voltage_measurements=0
+def voltage_check(ch,counter):
+    counter=counter
+    nominal=[0.0,5.000,3.300]
+    
+    result=0
+    channel(Power_selector,ch)
+    time.sleep_ms(20)
+    measurement=ina.voltage()
+    time.sleep_ms(20)
+
+    if (ch ==0 or ch == 9 or ch ==10):
+       result = math.isclose(measurement,nominal[0],abs_tol=0.5)
+       if result:
+           counter += 1
+           print("counter: ",counter)
+           return counter
+    elif (ch ==8 or ch == 5 or ch == 1 ):
+       result = math.isclose(measurement,nominal[1],abs_tol=0.5)
+       if result:
+           counter += 1
+           print("counter: ",counter)
+           return counter
+    elif (ch == 7  ):
+       result = math.isclose(measurement,nominal[2],abs_tol=0.5)
+       
+       if result:
+           counter += 1
+           print("counter: ",counter)
+           return counter
+    else:
+        print("invalid channel selection:")
+    return counter
+for i in range (0,16,1):
+    
+    voltage_measurements =voltage_check(i,voltage_measurements)
+    print("voltage_measurements: ")
+    print(voltage_measurements)
+
+print("ina.voltage() : %.3f V" % ina.voltage())
+handshake_output.value(1)
+print("ESP32 to Arduino Flag:", handshake_output.value())  
+channel(Data_selector,10)
+
+Data_signal.irq(handler = edge_interrupt,trigger=Pin.IRQ_RISING)
+while True:
+    #print("Arduino to ESP32 Flag:", Arduino_to_ESP32_transaction_flag)  
+    #print("ESP32 to Arduino Flag:", ESP32_to_Arduino_transaction_flag)
+    
+
+    edge_count =0
+    time.sleep_ms(measurement_time)  # Update every second
+    #print(edge_count)
+    frequency = edge_count / measurement_time
+    if frequency >0:
+        print(f"Measured Frequency: {frequency:.2f} Hz")
+
+    '''# Check handshake flag and generate PWM if needed
+    if (handshake_input.value() ==1 and ESP32_to_Arduino_transaction_flag == 0):
+        pwm1 = PWM(Pin(19), freq=1000, duty=512)  # Generate 8MHz PWM on GPIO19
+        print("PWM on GPIO19 started")
+        handshake_output.value(1)  # turn off  handshake output'''
+
+
