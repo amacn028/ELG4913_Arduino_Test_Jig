@@ -1,0 +1,249 @@
+#include <SPI.h>
+#include <Wire.h>
+#include "CD74HC4067.h"
+#include <Adafruit_INA219.h>
+Adafruit_INA219 ina219;
+
+
+CD74HC4067 datapath_mux(4, 16, 17, 5);
+#define handshake_output 32
+#define handshake_input 35
+//#define SDA 21
+//#define SCL 22
+#define DATA_SIG_PIN 18
+#define ANALOG_SIG_PIN 34// may need to only use DATA_SIG_PIN above for both PWM and analog measurements
+#define CS_PIN 15
+float get_power_measurement(){
+  delay(20);
+  float result = ina219.getBusVoltage_V();
+  delay(20);
+  return result;
+}
+//need to implement timeout period routine here
+// unsigned long timerStart =0;
+// const unsigned long timeoutPeriod = 10000;
+// void startTimeout(){
+//   timerStart=millis();
+// }
+// bool isTimeoutElapsed() {
+//   return(millis() - timerStart) >= timeoutPeriod;
+// }
+volatile unsigned long stage_counter =0;
+volatile unsigned long lastInterruptTime =0;
+const unsigned long debounceTime = 5000000;
+int iteration_counter=0;
+//24 bytes total
+int ESP32_to_Arduino_transaction_flag =0;
+int Arduino_to_ESP32_transaction_flag =0;
+int Analog_measurements = 0;
+int Spi_index =0;
+void handshake_input_toggle(){
+  unsigned long currentTime = micros();
+  if((currentTime-lastInterruptTime) >= debounceTime){
+    stage_counter++;
+    lastInterruptTime = currentTime;
+  }
+}
+
+void setup() {
+  //Wire.begin(SDA,SCL);
+  Serial.begin(115200);
+  
+  //Wire.begin();
+  // while (!Serial); // Wait for serial monitor
+  // Serial.println("Adafruit INA219 Working!");
+
+  // if (!ina219.begin()) {
+  //   Serial.println("Adafruit INA219 Not Working :(");
+  //   while (1) { delay(10); }
+  // }
+
+  
+  
+ // startTimeout();
+  pinMode(DATA_SIG_PIN,OUTPUT);
+  pinMode(ANALOG_SIG_PIN,INPUT);
+  pinMode(handshake_input,INPUT);
+  pinMode(handshake_output,OUTPUT);
+  pinMode(CS_PIN, OUTPUT);
+  digitalWrite(CS_PIN, HIGH); // Initially disable slave
+  digitalWrite(handshake_output,HIGH);
+  attachInterrupt(digitalPinToInterrupt(handshake_input),handshake_input_toggle,CHANGE);
+  SPI.begin(14, 12, 13, CS_PIN);  // SCK, MISO, MOSI, SS
+
+  Serial.println("SPI Master ready");
+}
+
+void loop() {
+  
+  if(stage_counter==0){
+    Serial.println("Arduino not detected, exiting test sequence");
+   
+  }
+  
+  if(stage_counter==1){
+    Serial.print("power measurements: ");
+    Serial.println(get_power_measurement());
+    digitalWrite(handshake_output,LOW);
+    
+  }
+  if(stage_counter ==2){
+    Serial.print("stage 2");
+  }
+  byte DigitalPins[12];
+  byte receivedData[12];
+  if(stage_counter==4){
+    digitalWrite(CS_PIN, LOW);  // Begin transaction
+
+    for (int i = 0; i < 12; i++) {
+      receivedData[i] = SPI.transfer(0x00);  // Send dummy byte to receive
+    }
+  
+    digitalWrite(CS_PIN, HIGH); // End transaction
+
+    Serial.println("Received from slave:");
+    for (int i = 0; i < 12; i++) {
+      Serial.print("0x");
+      Serial.print(receivedData[i], HEX);
+      Serial.print(" ");
+      if(receivedData[i]!=0){
+        DigitalPins[i]=receivedData[Spi_index];
+        Spi_index++;
+      }
+      
+      
+    }
+    Serial.println();
+    Serial.println("SPI test:");
+    for(int j=0; j<12; j++){
+    Serial.print(DigitalPins[j],HEX);
+    Serial.println();
+    }
+    digitalWrite(handshake_output,HIGH);
+  }
+
+  if(stage_counter ==3){
+
+    digitalWrite(DATA_SIG_PIN,HIGH);
+    delay(20);
+    datapath_mux.channel(7);
+    delay(20);
+    //Analog_measurements=analogRead(DATA_SIG_PIN);
+    Serial.print("A0: ");
+    iteration_counter++;
+    datapath_mux.channel(8);
+    delay(20);
+    
+    Serial.print("A1: ");
+    iteration_counter++;
+    datapath_mux.channel(9);
+    delay(20);
+    
+    Serial.print("A2: ");
+    iteration_counter++;
+    datapath_mux.channel(10);
+    delay(20);
+  
+    Serial.print("A3: ");
+    iteration_counter++;
+    datapath_mux.channel(11);
+    delay(20);
+    
+    Serial.print("A4: ");
+    iteration_counter++;
+    datapath_mux.channel(12);
+    delay(20);
+    
+    Serial.print("A5: ");
+    datapath_mux.channel(13);
+    delay(20);
+    iteration_counter++;
+    Serial.print("ANALOG_SIG_PIN: ");
+    //analogReadResolution(10);
+    Analog_measurements=analogRead(ANALOG_SIG_PIN);
+    //Analog_measurements=0.66*Analog_measurements;
+    Analog_measurements = map(Analog_measurements,0,4096,0,255);
+    Serial.println(Analog_measurements);
+    //need to add in code for analog ref voltage measurement(use voltage divider!!) here
+    digitalWrite(DATA_SIG_PIN,LOW);
+    
+    digitalWrite(handshake_output,LOW);
+
+  }
+  if(stage_counter ==5){
+    Serial.println("PWM code here");
+  }
+  if(stage_counter ==6){
+    Serial.println("data type test:");
+    Serial.println(DigitalPins[1]+1);
+    Serial.println("verification of results here: ");
+    if(DigitalPins[1] != 51){
+      Serial.println("I2C not working");
+      }
+    if(DigitalPins[2] != 63){
+      Serial.println("D8-D13 HIGH broken");
+      Serial.println("D8-D13 HIGH measured results");
+      Serial.println(DigitalPins[2]);
+      }
+    if(DigitalPins[3] != 3){
+      Serial.println("D8-D13 LOW broken");
+      Serial.println("D8-D13 LOW measured results");
+      Serial.println(DigitalPins[3]);
+      }
+    if(DigitalPins[4] != 251){
+      Serial.println("D0-D7 HIGH broken");
+      Serial.println("D0-D7 HIGH measured results");
+      Serial.println(DigitalPins[4]);
+      }
+    if(DigitalPins[5] != 131){
+      Serial.println("D0-D7 LOW broken");
+      Serial.println("D0-D7 LOW measured results");
+      Serial.println(DigitalPins[5]);
+      }
+    if(DigitalPins[6] != Analog_measurements){
+      Serial.println("A0 broken");
+      Serial.println("A0 measured results");
+      Serial.println(DigitalPins[6]);
+      }
+    if(DigitalPins[7] != Analog_measurements){
+      Serial.println("A1 broken");
+      Serial.println("A1 measured results");
+      Serial.println(DigitalPins[7]);
+      }
+    if(DigitalPins[8] != Analog_measurements){
+      Serial.println("A2 broken");
+      Serial.println("A2 measured results");
+      Serial.println(DigitalPins[8]);
+      }
+    if(DigitalPins[9] != Analog_measurements){
+      Serial.println("A3 broken");
+      Serial.println("A3 measured results");
+      Serial.println(DigitalPins[9]);
+      }
+    if(DigitalPins[10] != Analog_measurements){
+      Serial.println("A4 broken");
+      Serial.println("A4 measured results");
+      Serial.println(DigitalPins[10]);
+      }
+    if(DigitalPins[11] != Analog_measurements){
+      Serial.println("A5 broken");
+      Serial.println("A5 measured results");
+      Serial.println(DigitalPins[11]);
+      }
+    else{
+      Serial.println("End of measured results");
+      }
+
+  }
+  
+  Serial.println();
+  ESP32_to_Arduino_transaction_flag=digitalRead(handshake_input);
+  Arduino_to_ESP32_transaction_flag=digitalRead(handshake_output);
+  Serial.print("ESP32_to_Arduino_transaction_flag: ");
+  Serial.println(ESP32_to_Arduino_transaction_flag);
+  Serial.print("Arduino_to_ESP32_transaction_flag: ");
+  Serial.println(Arduino_to_ESP32_transaction_flag);
+  Serial.print("Stage_counter: ");
+  Serial.println(stage_counter);
+  delay(1000);
+}
