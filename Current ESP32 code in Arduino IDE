@@ -6,6 +6,7 @@ Adafruit_INA219 ina219;
 
 
 CD74HC4067 datapath_mux(4, 16, 17, 5);
+
 #define handshake_output 32
 #define handshake_input 35
 //#define SDA 21
@@ -30,7 +31,7 @@ float get_power_measurement(){
 // }
 volatile unsigned long stage_counter =0;
 volatile unsigned long lastInterruptTime =0;
-const unsigned long debounceTime = 5000000;
+const unsigned long debounceTime = 500000;
 int iteration_counter=0;
 //24 bytes total
 int ESP32_to_Arduino_transaction_flag =0;
@@ -67,7 +68,7 @@ void setup() {
   pinMode(handshake_output,OUTPUT);
   pinMode(CS_PIN, OUTPUT);
   digitalWrite(CS_PIN, HIGH); // Initially disable slave
-  digitalWrite(handshake_output,HIGH);
+  digitalWrite(handshake_output,LOW);
   attachInterrupt(digitalPinToInterrupt(handshake_input),handshake_input_toggle,CHANGE);
   SPI.begin(14, 12, 13, CS_PIN);  // SCK, MISO, MOSI, SS
 
@@ -78,17 +79,34 @@ void loop() {
   
   if(stage_counter==0){
     Serial.println("Arduino not detected, exiting test sequence");
+    digitalWrite(handshake_output,LOW);
+    if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
+      stage_counter++;
+    }
+        
+    
    
   }
   
   if(stage_counter==1){
     Serial.print("power measurements: ");
     Serial.println(get_power_measurement());
-    digitalWrite(handshake_output,LOW);
+    
+   
+    //digitalWrite(handshake_output,LOW);
+    
     
   }
   if(stage_counter ==2){
+    //digitalWrite(handshake_output,HIGH);
     Serial.print("stage 2");
+    digitalWrite(handshake_output,HIGH);
+    
+    if(ESP32_to_Arduino_transaction_flag ==1 && Arduino_to_ESP32_transaction_flag==0){
+      stage_counter++;
+    }
+    
+    
   }
   byte DigitalPins[12];
   byte receivedData[12];
@@ -119,7 +137,8 @@ void loop() {
     Serial.print(DigitalPins[j],HEX);
     Serial.println();
     }
-    digitalWrite(handshake_output,HIGH);
+    stage_counter++;
+    
   }
 
   if(stage_counter ==3){
@@ -166,18 +185,111 @@ void loop() {
     Serial.println(Analog_measurements);
     //need to add in code for analog ref voltage measurement(use voltage divider!!) here
     digitalWrite(DATA_SIG_PIN,LOW);
-    
+    if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
+      stage_counter++;
+    }
     digitalWrite(handshake_output,LOW);
 
   }
+  int frequencies[4];
   if(stage_counter ==5){
     Serial.println("PWM code here");
+    pinMode(DATA_SIG_PIN,INPUT);
+    Serial.print("D5: ");
+    datapath_mux.channel(2);
+    delay(20);
+    unsigned long highTime = pulseIn(DATA_SIG_PIN, HIGH);
+    unsigned long lowTime = pulseIn(DATA_SIG_PIN, LOW);
+  
+    unsigned long period = highTime + lowTime;
+    float frequency = 1e6 / period; // in Hz
+    float dutyCycle = (highTime * 100.0) / period;
+
+    Serial.print("Frequency: ");
+    Serial.print(frequency);
+    Serial.print(" Hz | Duty Cycle: ");
+    Serial.print(dutyCycle);
+    Serial.println(" %");
+    if(frequency > 965.00){
+      frequencies[0]=1;
+    }
+    
+
+    Serial.print("D6: ");
+    datapath_mux.channel(3);
+    delay(20);
+    highTime = pulseIn(DATA_SIG_PIN, HIGH);
+    lowTime = pulseIn(DATA_SIG_PIN, LOW);
+  
+    period = highTime + lowTime;
+    frequency = 1e6 / period; // in Hz
+    dutyCycle = (highTime * 100.0) / period;
+
+    Serial.print("Frequency: ");
+    Serial.print(frequency);
+    Serial.print(" Hz | Duty Cycle: ");
+    Serial.print(dutyCycle);
+    Serial.println(" %");
+    if(frequency > 965.00){
+      frequencies[1]=1;
+    }
+    
+
+    Serial.print("D9: ");
+    datapath_mux.channel(4);
+    delay(20);
+    highTime = pulseIn(DATA_SIG_PIN, HIGH);
+    lowTime = pulseIn(DATA_SIG_PIN, LOW);
+  
+    period = highTime + lowTime;
+    frequency = 1e6 / period; // in Hz
+    dutyCycle = (highTime * 100.0) / period;
+
+    Serial.print("Frequency: ");
+    Serial.print(frequency);
+    Serial.print(" Hz | Duty Cycle: ");
+    Serial.print(dutyCycle);
+    Serial.println(" %");
+    if(frequency > 475.00){
+      frequencies[2]=1;
+    }
+    
+
+    Serial.print("D3: ");
+    datapath_mux.channel(0);
+    delay(20);
+    highTime = pulseIn(DATA_SIG_PIN, HIGH);
+    lowTime = pulseIn(DATA_SIG_PIN, LOW);
+  
+    period = highTime + lowTime;
+    frequency = 1e6 / period; // in Hz
+    dutyCycle = (highTime * 100.0) / period;
+
+    Serial.print("Frequency: ");
+    Serial.print(frequency);
+    Serial.print(" Hz | Duty Cycle: ");
+    Serial.print(dutyCycle);
+    Serial.println(" %");
+   
+    if(frequency > 475.00){
+      frequencies[3]=1;
+    }
+    Serial.print("frequencies[0]: ");
+    Serial.println(frequencies[0]);
+    Serial.print("frequencies[1]: ");
+    Serial.println(frequencies[1]);
+    Serial.print("frequencies[2]: ");
+    Serial.println(frequencies[2]);
+    Serial.print("frequencies[3]: ");
+    Serial.println(frequencies[3]);
+    
+    delay(500);
+    stage_counter++;
   }
   if(stage_counter ==6){
-    Serial.println("data type test:");
-    Serial.println(DigitalPins[1]+1);
+    
     Serial.println("verification of results here: ");
-    if(DigitalPins[1] != 51){
+    if(DigitalPins[1] != 104){
       Serial.println("I2C not working");
       }
     if(DigitalPins[2] != 63){
@@ -190,12 +302,12 @@ void loop() {
       Serial.println("D8-D13 LOW measured results");
       Serial.println(DigitalPins[3]);
       }
-    if(DigitalPins[4] != 251){
+    if(DigitalPins[4] != 255){
       Serial.println("D0-D7 HIGH broken");
       Serial.println("D0-D7 HIGH measured results");
       Serial.println(DigitalPins[4]);
       }
-    if(DigitalPins[5] != 131){
+    if(DigitalPins[5] != 3){
       Serial.println("D0-D7 LOW broken");
       Serial.println("D0-D7 LOW measured results");
       Serial.println(DigitalPins[5]);
@@ -230,6 +342,26 @@ void loop() {
       Serial.println("A5 measured results");
       Serial.println(DigitalPins[11]);
       }
+    if(frequencies[0] != 1){
+      Serial.println("D5 PWM broken");
+      //Serial.println("D5 PWM frequency [Hz]");
+      Serial.println(frequencies[0]);
+    }
+    if(frequencies[1] != 1){
+      Serial.println("D6 PWM broken");
+      //Serial.println("D6 PWM frequency [Hz]");
+      Serial.println(frequencies[1]);
+    }
+    if(frequencies[2] != 1){
+      Serial.println("D9 PWM broken");
+      //Serial.println("D9 PWM frequency [Hz]");
+      Serial.println(frequencies[2]);
+    }
+    if(frequencies[3] != 1){
+      Serial.println("D3 PWM broken");
+      //Serial.println("D3 PWM frequency [Hz]");
+      Serial.println(frequencies[3]);
+    }
     else{
       Serial.println("End of measured results");
       }
@@ -237,8 +369,8 @@ void loop() {
   }
   
   Serial.println();
-  ESP32_to_Arduino_transaction_flag=digitalRead(handshake_input);
-  Arduino_to_ESP32_transaction_flag=digitalRead(handshake_output);
+  ESP32_to_Arduino_transaction_flag=digitalRead(handshake_output);
+  Arduino_to_ESP32_transaction_flag=digitalRead(handshake_input);
   Serial.print("ESP32_to_Arduino_transaction_flag: ");
   Serial.println(ESP32_to_Arduino_transaction_flag);
   Serial.print("Arduino_to_ESP32_transaction_flag: ");
