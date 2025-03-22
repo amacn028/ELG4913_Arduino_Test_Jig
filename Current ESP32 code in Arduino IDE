@@ -80,23 +80,32 @@ void loop() {
   if(stage_counter==0){
     Serial.println("Arduino not detected, exiting test sequence");
     digitalWrite(handshake_output,LOW);
-    if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
-      stage_counter++;
-    }
+    // if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
+    //   stage_counter++;
+    //   //delay(20);
+    //   //stage_counter++;
+    //   //delay(20);
+    //}
         
     
    
   }
   
   if(stage_counter==1){
-    Serial.print("power measurements: ");
-    Serial.println(get_power_measurement());
+    if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
+      stage_counter++;
+      //delay(20);
+      //stage_counter++;
+      //delay(20);
+    }
+
+  }
     
    
     //digitalWrite(handshake_output,LOW);
     
     
-  }
+  // }
   if(stage_counter ==2){
     //digitalWrite(handshake_output,HIGH);
     Serial.print("stage 2");
