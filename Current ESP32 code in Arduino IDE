@@ -1,39 +1,15 @@
 #include <SPI.h>
 #include <Wire.h>
 #include "CD74HC4067.h"
-#include <Adafruit_INA219.h>
-Adafruit_INA219 ina219;
-
-
 CD74HC4067 datapath_mux(4, 16, 17, 5);
-
 #define handshake_output 32
 #define handshake_input 35
-//#define SDA 21
-//#define SCL 22
 #define DATA_SIG_PIN 18
-#define ANALOG_SIG_PIN 34// may need to only use DATA_SIG_PIN above for both PWM and analog measurements
+#define ANALOG_SIG_PIN 34
 #define CS_PIN 15
-float get_power_measurement(){
-  delay(20);
-  float result = ina219.getBusVoltage_V();
-  delay(20);
-  return result;
-}
-//need to implement timeout period routine here
-// unsigned long timerStart =0;
-// const unsigned long timeoutPeriod = 10000;
-// void startTimeout(){
-//   timerStart=millis();
-// }
-// bool isTimeoutElapsed() {
-//   return(millis() - timerStart) >= timeoutPeriod;
-// }
 volatile unsigned long stage_counter =0;
 volatile unsigned long lastInterruptTime =0;
 const unsigned long debounceTime = 500000;
-int iteration_counter=0;
-//24 bytes total
 int ESP32_to_Arduino_transaction_flag =0;
 int Arduino_to_ESP32_transaction_flag =0;
 int Analog_measurements = 0;
@@ -45,23 +21,8 @@ void handshake_input_toggle(){
     lastInterruptTime = currentTime;
   }
 }
-
 void setup() {
-  //Wire.begin(SDA,SCL);
   Serial.begin(115200);
-  
-  //Wire.begin();
-  // while (!Serial); // Wait for serial monitor
-  // Serial.println("Adafruit INA219 Working!");
-
-  // if (!ina219.begin()) {
-  //   Serial.println("Adafruit INA219 Not Working :(");
-  //   while (1) { delay(10); }
-  // }
-
-  
-  
- // startTimeout();
   pinMode(DATA_SIG_PIN,OUTPUT);
   pinMode(ANALOG_SIG_PIN,INPUT);
   pinMode(handshake_input,INPUT);
@@ -71,235 +32,121 @@ void setup() {
   digitalWrite(handshake_output,LOW);
   attachInterrupt(digitalPinToInterrupt(handshake_input),handshake_input_toggle,CHANGE);
   SPI.begin(14, 12, 13, CS_PIN);  // SCK, MISO, MOSI, SS
-
-  Serial.println("SPI Master ready");
+  
 }
-
 void loop() {
-  
   if(stage_counter==0){
-    Serial.println("Arduino not detected, exiting test sequence");
+    Serial.println("Arduino not detected: Check 5Vdc supply.");
+    Serial.println("Now exiting test sequence.");
     digitalWrite(handshake_output,LOW);
-    // if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
-    //   stage_counter++;
-    //   //delay(20);
-    //   //stage_counter++;
-    //   //delay(20);
-    //}
-        
-    
-   
-  }
-  
+    }
   if(stage_counter==1){
+    Serial.println("Test sequence is running:");
     if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
       stage_counter++;
-      //delay(20);
-      //stage_counter++;
-      //delay(20);
+      }
     }
-
-  }
-    
-   
-    //digitalWrite(handshake_output,LOW);
-    
-    
-  // }
   if(stage_counter ==2){
-    //digitalWrite(handshake_output,HIGH);
-    Serial.print("stage 2");
+    Serial.println("Test sequence is running:");
     digitalWrite(handshake_output,HIGH);
-    
     if(ESP32_to_Arduino_transaction_flag ==1 && Arduino_to_ESP32_transaction_flag==0){
       stage_counter++;
+      }
     }
-    
-    
-  }
   byte DigitalPins[12];
   byte receivedData[12];
   if(stage_counter==4){
+    Serial.println("Test sequence is running:");
     digitalWrite(CS_PIN, LOW);  // Begin transaction
-
     for (int i = 0; i < 12; i++) {
       receivedData[i] = SPI.transfer(0x00);  // Send dummy byte to receive
-    }
-  
+      }
     digitalWrite(CS_PIN, HIGH); // End transaction
-
-    Serial.println("Received from slave:");
     for (int i = 0; i < 12; i++) {
-      Serial.print("0x");
-      Serial.print(receivedData[i], HEX);
-      Serial.print(" ");
       if(receivedData[i]!=0){
         DigitalPins[i]=receivedData[Spi_index];
         Spi_index++;
+        }
       }
-      
-      
-    }
-    Serial.println();
-    Serial.println("SPI test:");
-    for(int j=0; j<12; j++){
-    Serial.print(DigitalPins[j],HEX);
-    Serial.println();
-    }
     stage_counter++;
-    
-  }
-
+    }
   if(stage_counter ==3){
-
+    Serial.println("Test sequence is running:");
     digitalWrite(DATA_SIG_PIN,HIGH);
     delay(20);
     datapath_mux.channel(7);
     delay(20);
-    //Analog_measurements=analogRead(DATA_SIG_PIN);
-    Serial.print("A0: ");
-    iteration_counter++;
     datapath_mux.channel(8);
     delay(20);
-    
-    Serial.print("A1: ");
-    iteration_counter++;
     datapath_mux.channel(9);
     delay(20);
-    
-    Serial.print("A2: ");
-    iteration_counter++;
     datapath_mux.channel(10);
     delay(20);
-  
-    Serial.print("A3: ");
-    iteration_counter++;
     datapath_mux.channel(11);
     delay(20);
-    
-    Serial.print("A4: ");
-    iteration_counter++;
     datapath_mux.channel(12);
     delay(20);
-    
-    Serial.print("A5: ");
     datapath_mux.channel(13);
     delay(20);
-    iteration_counter++;
-    Serial.print("ANALOG_SIG_PIN: ");
-    //analogReadResolution(10);
     Analog_measurements=analogRead(ANALOG_SIG_PIN);
-    //Analog_measurements=0.66*Analog_measurements;
     Analog_measurements = map(Analog_measurements,0,4096,0,255);
-    Serial.println(Analog_measurements);
-    //need to add in code for analog ref voltage measurement(use voltage divider!!) here
     digitalWrite(DATA_SIG_PIN,LOW);
     if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
       stage_counter++;
-    }
+      }
     digitalWrite(handshake_output,LOW);
-
-  }
+    }
   int frequencies[4];
   if(stage_counter ==5){
-    Serial.println("PWM code here");
+    Serial.println("Test sequence is running:");
     pinMode(DATA_SIG_PIN,INPUT);
-    Serial.print("D5: ");
     datapath_mux.channel(2);
     delay(20);
     unsigned long highTime = pulseIn(DATA_SIG_PIN, HIGH);
     unsigned long lowTime = pulseIn(DATA_SIG_PIN, LOW);
-  
     unsigned long period = highTime + lowTime;
     float frequency = 1e6 / period; // in Hz
     float dutyCycle = (highTime * 100.0) / period;
-
-    Serial.print("Frequency: ");
-    Serial.print(frequency);
-    Serial.print(" Hz | Duty Cycle: ");
-    Serial.print(dutyCycle);
-    Serial.println(" %");
     if(frequency > 965.00){
       frequencies[0]=1;
-    }
-    
-
-    Serial.print("D6: ");
+      }
     datapath_mux.channel(3);
     delay(20);
     highTime = pulseIn(DATA_SIG_PIN, HIGH);
     lowTime = pulseIn(DATA_SIG_PIN, LOW);
-  
     period = highTime + lowTime;
     frequency = 1e6 / period; // in Hz
     dutyCycle = (highTime * 100.0) / period;
-
-    Serial.print("Frequency: ");
-    Serial.print(frequency);
-    Serial.print(" Hz | Duty Cycle: ");
-    Serial.print(dutyCycle);
-    Serial.println(" %");
     if(frequency > 965.00){
       frequencies[1]=1;
-    }
-    
-
-    Serial.print("D9: ");
+      }
     datapath_mux.channel(4);
     delay(20);
     highTime = pulseIn(DATA_SIG_PIN, HIGH);
     lowTime = pulseIn(DATA_SIG_PIN, LOW);
-  
     period = highTime + lowTime;
     frequency = 1e6 / period; // in Hz
     dutyCycle = (highTime * 100.0) / period;
-
-    Serial.print("Frequency: ");
-    Serial.print(frequency);
-    Serial.print(" Hz | Duty Cycle: ");
-    Serial.print(dutyCycle);
-    Serial.println(" %");
     if(frequency > 475.00){
       frequencies[2]=1;
-    }
-    
-
-    Serial.print("D3: ");
+      }
     datapath_mux.channel(0);
     delay(20);
     highTime = pulseIn(DATA_SIG_PIN, HIGH);
     lowTime = pulseIn(DATA_SIG_PIN, LOW);
-  
     period = highTime + lowTime;
     frequency = 1e6 / period; // in Hz
     dutyCycle = (highTime * 100.0) / period;
-
-    Serial.print("Frequency: ");
-    Serial.print(frequency);
-    Serial.print(" Hz | Duty Cycle: ");
-    Serial.print(dutyCycle);
-    Serial.println(" %");
-   
     if(frequency > 475.00){
       frequencies[3]=1;
-    }
-    Serial.print("frequencies[0]: ");
-    Serial.println(frequencies[0]);
-    Serial.print("frequencies[1]: ");
-    Serial.println(frequencies[1]);
-    Serial.print("frequencies[2]: ");
-    Serial.println(frequencies[2]);
-    Serial.print("frequencies[3]: ");
-    Serial.println(frequencies[3]);
-    
+      }
     delay(500);
     stage_counter++;
-  }
+    }
   if(stage_counter ==6){
-    
     Serial.println("verification of results here: ");
     if(DigitalPins[1] != 104){
-      Serial.println("I2C not working");
+      Serial.println("I2C not working.Check I2C bus connections");
       }
     if(DigitalPins[2] != 63){
       Serial.println("D8-D13 HIGH broken");
@@ -353,38 +200,30 @@ void loop() {
       }
     if(frequencies[0] != 1){
       Serial.println("D5 PWM broken");
-      //Serial.println("D5 PWM frequency [Hz]");
       Serial.println(frequencies[0]);
-    }
+      }
     if(frequencies[1] != 1){
       Serial.println("D6 PWM broken");
-      //Serial.println("D6 PWM frequency [Hz]");
       Serial.println(frequencies[1]);
-    }
+      }
     if(frequencies[2] != 1){
       Serial.println("D9 PWM broken");
-      //Serial.println("D9 PWM frequency [Hz]");
       Serial.println(frequencies[2]);
-    }
+      }
     if(frequencies[3] != 1){
       Serial.println("D3 PWM broken");
-      //Serial.println("D3 PWM frequency [Hz]");
       Serial.println(frequencies[3]);
-    }
+      }
     else{
       Serial.println("End of measured results");
+      Serial.println("Please disconnect the Arduino now:");
+      delay(100000);
+      Serial.println("restarting test sequence now:");
+      stage_counter =0;
       }
-
-  }
-  
+    }
   Serial.println();
   ESP32_to_Arduino_transaction_flag=digitalRead(handshake_output);
   Arduino_to_ESP32_transaction_flag=digitalRead(handshake_input);
-  Serial.print("ESP32_to_Arduino_transaction_flag: ");
-  Serial.println(ESP32_to_Arduino_transaction_flag);
-  Serial.print("Arduino_to_ESP32_transaction_flag: ");
-  Serial.println(Arduino_to_ESP32_transaction_flag);
-  Serial.print("Stage_counter: ");
-  Serial.println(stage_counter);
   delay(1000);
 }
