@@ -147,14 +147,14 @@ void loop() {
   //digitalWrite(handshake_output,H);
     if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
         stage_counter++;
-        delay(20);
-        stage_counter++;
-        delay(20);
+        delay(5);
+        // stage_counter++;
+        // delay(5);
         
       }
   }
-  if(stage_counter == 1){
-    
+  if(stage_counter==1){
+    stage_counter++;
   }
   //digitalWrite(handshake_output,LOW);//initiate stage2
   if(stage_counter ==2){
