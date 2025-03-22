@@ -8,10 +8,8 @@ int Arduino_to_ESP32_transaction_flag =0;
 volatile unsigned long stage_counter =0;
 volatile unsigned long lastInterruptTime =0;
 const unsigned long debounceTime = 500000;
-int iteration_counter=0;
 volatile byte dataToSend[11] = {0x11, 0x22, 0x33, 0x44, 0x55,0x12,0x13,0x14,0x15,0x16,0x17};
 volatile byte index = 0;
-
 void handshake_input_toggle(){
   unsigned long currentTime = micros();
   if((currentTime-lastInterruptTime) >= debounceTime){
@@ -19,12 +17,7 @@ void handshake_input_toggle(){
     lastInterruptTime = currentTime;
   }
 }
-
 typedef struct SPI_STRUCT{
-  
-  
-  
-
   byte i2c_address;
   byte D_register1;
   byte B_register1;
@@ -36,63 +29,42 @@ typedef struct SPI_STRUCT{
   byte A3;
   byte A4;
   byte A5;
-  
-  
 };
 SPI_STRUCT struct1;
-
-
 void setup() {
   Wire.begin();
   Serial.begin(115200);
   DDRD = DDRD | B11111110;  // confiure pins D0,D2-D7 as outputs
                           // without changing the value of pins 0 & 1, which are RX & TX
-  
   DDRB = DDRB | B11111100;  // confiure pins D8-D13 as outputs
                           // without changing the value of bits 6 & 7 of the register ( crystal osc. pins) which are unusable.
-  
-  
-  
   PORTD=B00000000; // set pins D2-D7 to LOW
-    //this should read as: 1 ie 00000011 ( no control over TX/RX)
+                  //this should read as: 1 ie 00000011 ( no control over TX/RX)
   PORTB=B00000000; // set pins D8-D13 to LOW
-    //this should read as: 0 ie 00000011
-  
+                  //this should read as: 0 ie 00000011
   struct1.D_register2 = PIND;
-  //struct1.D_register = 0x0E;
   struct1.B_register2 = PINB;
-  //struct1.B_register = 0x02;
   PORTD=B11111100; // set pins D2-D7 to HIGH , no control on D1:D0 which default are b'01
-  //this should read as: 11111111 ( no control over TX/RX)
+                  //this should read as: 11111111 ( no control over TX/RX)
   PORTB=B00111111; // set pins D8-D13 to HIGH , 
-    // this should read as: 00111111 (PortB only has bits{6:0} configurable)
+                  // this should read as: 00111111 (PortB only has bits{6:0} configurable)
   struct1.D_register1 = PIND;
-  //struct1.D_register = 0x0E;
   struct1.B_register1 = PINB;
-  //struct1.B_register = 0x02;
-  //dummy byte temp_measurement for now
-
   byte error, address; //variable for error and I2C address
   int nDevices;
-
-  Serial.println("Scanning...");
-
+  //Serial.println("Scanning...");
   nDevices = 0;
   for (address = 1; address < 127; address++ )
   {
-    // The i2c_scanner uses the return value of
-    // the Write.endTransmisstion to see if
-    // a device did acknowledge to the address.
     Wire.beginTransmission(address);
     error = Wire.endTransmission();
-
     if (error == 0)
     {
-      Serial.print("I2C device found at address 0x");
-      if (address < 16)
-        Serial.print("0");
-      Serial.print(address, HEX);
-      Serial.println("  !");
+      //Serial.print("I2C device found at address 0x");
+    //  if  (address < 16)
+    //     Serial.print("0");
+    //   Serial.print(address, HEX);
+    //   Serial.println("  !");
       struct1.i2c_address=address;
       nDevices++;
     }
@@ -105,28 +77,25 @@ void setup() {
     }
   }
   if (nDevices == 0){
-    Serial.println("No I2C devices found\n");
+    //Serial.println("No I2C devices found\n");
     struct1.i2c_address = 0;
     }
   else
-    Serial.println("done\n");
-
+    //Serial.println("done\n");
   
-  //struct1.temp_measurement=0x33;
-  //Serial.println(struct1.temp_measurement);
   dataToSend[0]=struct1.i2c_address;
   dataToSend[1]=struct1.B_register1;
   dataToSend[2]=struct1.B_register2;
   dataToSend[3]=struct1.D_register1;
   dataToSend[4]=struct1.D_register2;
   
-  //dataToSend[5] = {struct1.temp_measurement,struct1.B_register1,struct1.B_register2,struct1.D_register1,struct1.D_register2};
+  
   pinMode(MISO, OUTPUT);  // Slave sends data on MISO
   SPCR |= _BV(SPE);       // Enable SPI in slave mode
   SPI.attachInterrupt();  // Enable SPI interrupt
   pinMode(handshake_input,INPUT);
   pinMode(handshake_output,OUTPUT);
-  digitalWrite(handshake_output,HIGH); //initiate stage 1
+  digitalWrite(handshake_output,HIGH); 
   attachInterrupt(digitalPinToInterrupt(handshake_input),handshake_input_toggle,CHANGE);
 }
 
@@ -142,98 +111,57 @@ ISR(SPI_STC_vect) {
 }
 
 void loop() {
-  // You can update dataToSend[] here if needed dynamically
   if(stage_counter ==0){
-  //digitalWrite(handshake_output,H);
     if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
         stage_counter++;
         delay(5);
-        // stage_counter++;
-        // delay(5);
-        
       }
-  }
+    }
   if(stage_counter==1){
+    Serial.println("Test sequence is running:");
     stage_counter++;
-  }
-  //digitalWrite(handshake_output,LOW);//initiate stage2
+    }
   if(stage_counter ==2){
-
-    Serial.print("i2c_address: ");
-    Serial.println(struct1.i2c_address,HEX);
-    Serial.print("B_register1: ");
-    Serial.println(struct1.B_register1,HEX);
-    Serial.print("B_register2: ");
-    Serial.println(struct1.B_register2,HEX);
-    Serial.print("D_register1: ");
-    Serial.println(struct1.D_register1,HEX);
-    
-    Serial.print("D_register2: ");
-    Serial.println(struct1.D_register2,HEX);
-    // digitalWrite(handshake_output,LOW);
-    // if(ESP32_to_Arduino_transaction_flag ==1 && Arduino_to_ESP32_transaction_flag==0){
-    //   stage_counter++;
-    // }
+    Serial.println("Test sequence is running:");
     stage_counter++;
     }
   if(stage_counter ==3){
-    //may need some conditioning code ,depends if logic shifter corrects discrepancy
-    //" if within bounds,assign struct1.Ax = 254"
-
+    Serial.println("Test sequence is running:");
     analogMeasurements=analogRead(A0);
-    Serial.print("test A0 : ");
-    Serial.println(analogMeasurements);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
     if(analogMeasurements>=135){
-    struct1.A0=analogMeasurements;
-    }
-    Serial.print("A0: ");
-    Serial.println(analogMeasurements);
+      struct1.A0=analogMeasurements;
+      }
     delay(22);
     analogMeasurements=analogRead(A1);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
     if(analogMeasurements>=135){
-    struct1.A1=analogMeasurements;
-    }
-    
-    Serial.print("A1: ");
-    Serial.println(analogMeasurements);
+      struct1.A1=analogMeasurements;
+      }
     delay(22);
     analogMeasurements=analogRead(A2);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
-    
     if(analogMeasurements>=135){
-    struct1.A2=analogMeasurements;
-    }
-    Serial.print("A2: ");
-    Serial.println(analogMeasurements);
+      struct1.A2=analogMeasurements;
+      }
     delay(22);
     analogMeasurements=analogRead(A3);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
-    
     if(analogMeasurements>=135){
-    struct1.A3=analogMeasurements;
-    }
-    Serial.print("A3: ");
-    Serial.println(analogMeasurements);
+      struct1.A3=analogMeasurements;
+      }
     delay(22);
     analogMeasurements=analogRead(A4);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
     if(analogMeasurements>=135){
-    struct1.A4=analogMeasurements;
-    }
-
-    Serial.print("A4: ");
-    Serial.println(analogMeasurements);
+      struct1.A4=analogMeasurements;
+      }
     delay(22);
     analogMeasurements=analogRead(A5);
     analogMeasurements= map(analogMeasurements,0,1023,0,255);
-    
     if(analogMeasurements>=135){
-    struct1.A5=analogMeasurements;
-    }
-    Serial.print("A5: ");
-    Serial.println(analogMeasurements);
+      struct1.A5=analogMeasurements;
+      }
     delay(22);
     dataToSend[5]=struct1.A0;
     dataToSend[6]=struct1.A1;
@@ -244,16 +172,16 @@ void loop() {
     delay(200);
     if(ESP32_to_Arduino_transaction_flag ==0 && Arduino_to_ESP32_transaction_flag==1){
       stage_counter++;
-    }
+      }
     digitalWrite(handshake_output,HIGH);
   }
-
   if(stage_counter==4){
+    Serial.println("Test sequence is running:");
     delay(1000);
     stage_counter++;
-  }
+    }
   if(stage_counter ==5){
-    Serial.println("PWM code here");
+    Serial.println("Test sequence is running:");
     analogWrite(5,128);
     delay(18);
     analogWrite(6,64);
@@ -264,19 +192,15 @@ void loop() {
     delay(18);
     delay(500);
     stage_counter++;
-
-  }
+    }
   if(stage_counter==6){
-    Serial.print("stage 6");
-  }
+    Serial.println("end of test sequence:");
+    Serial.println("Please disconnect the Arduino now:");
+    delay(100000);
+    Serial.println("restarting test sequence now:");
+    stage_counter =0;
+    }
   ESP32_to_Arduino_transaction_flag=digitalRead(handshake_input);
   Arduino_to_ESP32_transaction_flag=digitalRead(handshake_output);
-  Serial.print("ESP32_to_Arduino_transaction_flag: ");
-  Serial.println(ESP32_to_Arduino_transaction_flag);
-  Serial.print("Arduino_to_ESP32_transaction_flag: ");
-  Serial.println(Arduino_to_ESP32_transaction_flag);
-  Serial.print("Stage_counter: ");
-  Serial.println(stage_counter);
-  
   delay(1000);
 }
